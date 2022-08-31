@@ -1,7 +1,7 @@
-#ifndef RPC_SERIALIZER_H
-#define RPC_SERIALIZER_H
+#ifndef SERIALIZER_H
+#define SERIALIZER_H
 
-
+#include <utility>
 #include <vector>
 #include <memory>
 #include <string>
@@ -11,6 +11,11 @@
 class DataBuffer: public std::vector<char>{
     size_t cursorPos{};       // 用于存储当前字节流的位置
 public:
+    DataBuffer():cursorPos(0){
+    }
+    DataBuffer(const char* s, size_t len):cursorPos(0){
+        insert(begin(), s, s+len);
+    }
     typedef std::shared_ptr<DataBuffer> ptr;
     void append(const char* s, size_t len){     // 添加数据到容器中
         insert(end(), s, s+len);
@@ -45,12 +50,6 @@ class Serializer{
     void input(const char* s, size_t len){
         buffer->append(s, len);
     }
-    size_t size(){
-        return buffer->curSize();
-    }
-    const char* data(){
-        return buffer->curData();
-    }
 
     template <typename T>
     void inputTypes(T t);       // 用于处理各种类型的序列化数据的输入
@@ -58,8 +57,36 @@ class Serializer{
     template <typename T>
     void outputTypes(T& t);      // 用于处理各种类型的序列化数据的输出
 public:
+    typedef std::shared_ptr<Serializer> ptr;            // 定义指向Serializer的智能指针
     Serializer(){       // 构造函数，初始化智能指针
         buffer = std::make_shared<DataBuffer>();
+    }
+    Serializer(const char* s, size_t len){
+        buffer = std::make_shared<DataBuffer>();
+        input(s, len);
+    }
+    explicit Serializer(DataBuffer::ptr buffer)
+            : buffer(std::move(buffer)){}
+
+    const char* data(){
+        return buffer->curData();
+    }
+    size_t size(){
+        return buffer->curSize();
+    }
+
+    template <typename Tuple, std::size_t Id>
+    void getv(Serializer& ds, Tuple& t)
+    {
+        ds >> std::get<Id>(t);
+    }
+
+    template <typename Tuple, std::size_t... I>
+    Tuple get_tuple(std::index_sequence<I...>)
+    {
+        Tuple t;
+        std::initializer_list<int> { (getv<Tuple, I>(*this, t), 0)... };
+        return t;
     }
 
     template <typename T>
@@ -122,4 +149,4 @@ void Serializer::outputTypes(std::string& t){
 }
 
 
-#endif //RPC_SERIALIZER_H
+#endif // SERIALIZER_H
