@@ -7,6 +7,7 @@
 #include <string>
 #include <cstring>
 #include <cassert>
+#include <algorithm>
 
 // 用于存储数据的类, 继承于vector<char>
 class DataBuffer: public std::vector<char>{
