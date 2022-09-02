@@ -3,6 +3,8 @@ project(RPC)
 
 set(CMAKE_CXX_STANDARD 20)
 
+include_directories("./include")
+
 add_executable(test_serializer ./test/test_serializer.cpp)
 
 add_executable(test_rpc_client ./test/test_rpc_client.cpp)
