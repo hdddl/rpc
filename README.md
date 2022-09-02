@@ -2,11 +2,19 @@
 
 # 1. 编译
 
-本项目基于[zmq](https://github.com/zeromq), 通过`cmake`构建, 可以直接使用以下命令继续编译
+> 下面安装步骤是基于Ubuntu 20.04.5 写的
+
+本项目基于[zmq](https://github.com/zeromq), 通过`cmake`构建，首先需要安装`libzmq`，可以直接用仓库中的安装脚本进行安装
 
 ```shell
 git clone https://github.com/hdddl/rpc.git
-cd rpc
+sudo bash ./script/instal.sh
+```
+
+安装完成之后就可以用`cmake`进行编译了
+
+```shell
+cd ..
 mkdir build
 cmake ..
 make
