@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include <string>
+#include <cstring>
 #include <cassert>
 
 // 用于存储数据的类, 继承于vector<char>
@@ -131,7 +132,7 @@ template <typename T>
 void Serializer::outputTypes(T &t) {
     int len = sizeof(t);
     assert(size() >= len);      // 如果请求的空间小于剩余的空间就抛出错误
-    memcpy(&t, data(), len);    // 将当前所指向的数据复制到t中
+	memcpy(&t, data(), len);    // 将当前所指向的数据复制到t中
     buffer->offset(len);        // 将当前数据所在指针向后移动k个单位
     byteOrder(reinterpret_cast<char*>(&t), len);        // 进行强制类型转换
 }
