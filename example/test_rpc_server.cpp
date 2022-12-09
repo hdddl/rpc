@@ -16,7 +16,7 @@ int main()
 {
 
     rpc server;
-    server.as_server(5555);
+    server.asServer(5555);
     foo f;
     server.regist("add", &foo::add, &f);  //注册类成员函数
     server.regist("Strcat", Strcat);      //注册普通函数

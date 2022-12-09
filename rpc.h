@@ -1,12 +1,15 @@
 #ifndef _RPC_H_
 #define _RPC_H_
 
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
 #include <iostream>
 #include <map>
 #include <functional>
 #include <tuple>
 #include <memory>
-#include <zmq.hpp>
 #include "serializer.h"
 
 template<typename T>
@@ -68,8 +71,6 @@ public:
     {
         message_.clear();
     }
-    int code() const { return code_; }
-    std::string message() const { return message_; }
     T value() const { return value_; }
 
     void set_value(const T& val) { value_ = val; }
@@ -97,53 +98,85 @@ private:
 
 class rpc {
 public:
-    rpc() : context_(1) {}
-    ~rpc() { context_.close(); }
+    size_t asClient(int port){
+        cliFd = socket(AF_INET, SOCK_STREAM, 0);
 
-    void as_client(const std::string& ip, int port){     // 作为客观端
-        role_ = RPC_CLIENT;
-        socket_ = std::unique_ptr<zmq::socket_t,
-                std::function<void(zmq::socket_t*)>>(new zmq::socket_t(context_, ZMQ_REQ),
-                                                     [](zmq::socket_t* sock) { sock->close(); delete sock; sock = nullptr; });
-        std::string addr = "tcp://" + ip + ":" + std::to_string(port);
-        socket_->connect(addr);
-    }
+        cliAddr.sin_family = AF_INET;                                  // IPV4
+        cliAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);     // use localhost
+        cliAddr.sin_port = htons(port);
 
-    void as_server(int port){           // 作为服务端
-        role_ = RPC_SERVER;
-        socket_ = std::unique_ptr<zmq::socket_t,
-                std::function<void(zmq::socket_t*)>>(new zmq::socket_t(context_, ZMQ_REP),
-                                                     [](zmq::socket_t* sock) { sock->close(); delete sock; sock = nullptr; });
-        std::string addr = "tcp://*:" + std::to_string(port);
-        std::cout << addr << std::endl;
-        socket_->bind(addr);
-    }
-
-    zmq::send_result_t send(zmq::message_t& data) {         // 发送消息
-        return socket_->send(data, zmq::send_flags::none);
-    }
-    zmq::recv_result_t recv(zmq::message_t& data) {         // 接受消息
-        return socket_->recv(data, zmq::recv_flags::none);
-    }
-    void set_timeout(uint32_t ms){          // 设置超时
-        if (role_ == RPC_CLIENT){
-            socket_->setsockopt(ZMQ_RCVTIMEO, ms);
+        if(connect(cliFd, (struct sockaddr *)&cliAddr, sizeof(cliAddr)) != 0){
+            std::cout << "connect to server failed" << std::endl;
+            return 1;
         }
+
+        return 0;
     }
 
-    void run(){         // 开始运行
-        while (true)
-        {
-            zmq::message_t data;
-            recv(data);
-            DataBuffer::ptr buffer = std::make_shared<DataBuffer>((char *)data.data(), data.size());
-            Serializer sr(buffer);
-            std::string funcname;
-            sr >> funcname;
+    size_t asServer(int port){
+        listenFD = socket(AF_INET, SOCK_STREAM, 0);
 
-            Serializer::ptr rptr = call_(funcname, sr.data(), sr.size());
-            zmq::message_t response(rptr->data(), rptr->size());
-            send(response);
+        if(listenFD < 0){
+            std::cout << "create listen file descriptor fail" << std::endl;
+            return 1;
+        }
+
+        serveAddr.sin_family = AF_INET;                                  // IPV4
+        serveAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);     // use localhost
+        serveAddr.sin_port = htons(port);                      // set listen port
+
+
+        if(bind(listenFD, (struct sockaddr *)&serveAddr, sizeof(serveAddr))){
+            std::cout << "bind failed" << std::endl;
+            return 1;
+        }
+        return 0;
+    }
+
+    // 发送消息
+    void send(const char* buf, size_t len){
+        sendto(cliFd, buf, len, 0, (struct sockaddr *)&cliAddr, sizeof(cliAddr));
+    }
+
+    // 接受消息
+    ssize_t receive(char* buf, size_t len){
+        return recvfrom(cliFd, buf, len, 0, (struct sockaddr*)&cliAddr, &cliAddrLen);
+    }
+
+    // 开始运行
+    size_t run(){
+        // begin to listening
+        if(listen(listenFD, 128) < 0){
+            std::cout << "Could not listen on socket" << std::endl;
+            return 1;
+        }
+
+        std::cout << "RPC server is running" << std::endl;
+        while(true){
+            cliAddrLen = sizeof(cliAddr);
+            cliFd = accept(listenFD, (struct sockaddr *)&cliAddr, &cliAddrLen);
+            if(cliFd < 0){
+                std::cout << "creat client file description failed" << std::endl;
+                return 1;
+            }
+
+            std::cout << inet_ntoa(cliAddr.sin_addr) << " is connected"  << std::endl;
+            char buf[buffSize];
+            while(true){
+                ssize_t len = receive(buf, buffSize);
+                if(!len)break;          // EOF
+
+                DataBuffer::ptr buffer = std::make_shared<DataBuffer>((char *)buf, len);
+                Serializer sr(buffer);
+                std::string functionName;
+                sr >> functionName;
+
+                Serializer::ptr rPtr = call_(functionName, sr.data(), sr.size());
+                send(rPtr->data(), rPtr->size());
+
+            }
+            std::cout << std::endl;
+            std::cout << inet_ntoa(cliAddr.sin_addr) << " is disconnected"  << std::endl;
         }
     }
 
@@ -236,30 +269,32 @@ public:
         (*pr) << response;
     }
 
+
     template<typename R>
     response_t<R> net_call(Serializer& sr)          // 发送已经完成序列化的数据
     {
-        zmq::message_t request(sr.size() + 1);
-        memcpy(request.data(), sr.data(), sr.size());
-        send(request);
-        zmq::message_t reply;
+        send(sr.data(), sr.size());
+        char buf[buffSize];
+        auto len = receive(buf, buffSize);
+
         response_t<R> val;
-        if (!recv(reply))
-        {
+        if(!len){
             val.set_code(RPC_ERR_RECV_TIMEOUT);
             val.set_message("recv timeout");
             return val;
         }
-        Serializer res((const char*)reply.data(), reply.size());
+        Serializer res(buf, len);
         res >> val;
         return val;
     }
 
 private:
     std::map<std::string, std::function<void(Serializer*, const char*, int)>> mapFunctions_;
-    zmq::context_t context_;
-    std::unique_ptr<zmq::socket_t, std::function<void(zmq::socket_t*)>> socket_;
-    int role_;
+    int listenFD, cliFd;
+    int buffSize = 200;
+    struct sockaddr_in serveAddr, cliAddr;
+    socklen_t cliAddrLen = 0;
+
 };
 
 #endif

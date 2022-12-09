@@ -3,7 +3,7 @@
 
 using namespace std;
 
-// test int type
+// example int type
 void testInt(){
     Serializer sr;
     sr << 3;
@@ -16,7 +16,7 @@ void testInt(){
     }
 }
 
-// test String type
+// example String type
 void testString(){
     Serializer sr;
     string st = "明月多情应笑我，笑我如今，幸负春心，独自闲愁独自鸣";
@@ -24,13 +24,13 @@ void testString(){
     string t;
     sr >> t;
     if(st == t){
-        cout << "String test pass" << endl;
+        cout << "String example pass" << endl;
     }else{
-        cout << "String test not pass" << endl;
+        cout << "String example not pass" << endl;
     }
 }
 
-// test self-define type
+// example self-define type
 void testSelfDefine(){
     struct Test{
         int a;
